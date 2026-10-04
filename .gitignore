@@ -1,0 +1,9 @@
+backend/.venv/
+backend/.env
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/data/raw/*.csv
+backend/data/raw/*.parquet
+frontend/node_modules/
+frontend/dist/
+frontend/.tools/
