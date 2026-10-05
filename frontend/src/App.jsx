@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, Database, Download, CreditCard, MapPin, Menu, Moon, PackageCheck, RefreshCw, Search, ShoppingBag, Sparkles, Sun, Tag, Truck, Users, X, } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, Download, CreditCard, MapPin, Menu, Moon, PackageCheck, RefreshCw, Search, ShoppingBag, Sparkles, Sun, Tag, Truck, Users, X, } from "lucide-react";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, } from "recharts";
 // The source has no currency code, so amounts stay in the source's numeric units.
 const amount = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -35,19 +35,21 @@ function App() {
     const [channel, setChannel] = useState("All channels");
     const [data, setData] = useState(null);
     const [filters, setFilters] = useState(null);
+    const [filterError, setFilterError] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [query, setQuery] = useState("");
+    const [orderSort, setOrderSort] = useState("newest");
     const [activeSection, setActiveSection] = useState("Overview");
     const [detail, setDetail] = useState(null);
-    const [theme, setTheme] = useState(() => localStorage.getItem("opsvista-theme") === "dark" ? "dark" : "light");
+    const [theme, setTheme] = useState(() => localStorage.getItem("opsvista-theme-v2") ?? "dark");
     const dashboardCache = useRef(new Map());
     useEffect(() => {
         // Remember the selected theme and apply it to the whole page.
         document.documentElement.dataset.theme = theme;
-        localStorage.setItem("opsvista-theme", theme);
+        localStorage.setItem("opsvista-theme-v2", theme);
     }, [theme]);
     useEffect(() => {
         // Keep the highlighted sidebar link aligned with the section near the top of the screen.
@@ -90,14 +92,25 @@ function App() {
     }, []);
     useEffect(() => {
         // Load filter options and source row counts, then reload them on manual refresh.
-        fetch("/api/filters")
+        const controller = new AbortController();
+        fetch("/api/filters", { signal: controller.signal })
             .then(async (response) => {
             if (!response.ok)
                 throw new Error(`API returned ${response.status}`);
             return (await response.json());
         })
-            .then(setFilters)
-            .catch(() => undefined);
+            .then((payload) => {
+            setFilters(payload);
+            setFilterError("");
+        })
+            .catch((requestError) => {
+            if (requestError.name !== "AbortError") {
+                setFilterError(requestError.message.includes("fetch")
+                    ? "Could not reach the API. Start the FastAPI service, then refresh."
+                    : requestError.message);
+            }
+        });
+        return () => controller.abort();
     }, [refreshKey]);
     useEffect(() => {
         // Reporting windows are anchored to the latest order date in the supplied data.
@@ -146,11 +159,22 @@ function App() {
     }, [days, country, channel, orderLimit, refreshKey]);
     const visibleOrders = useMemo(() => {
         const normalized = query.trim().toLowerCase();
-        if (!normalized)
-            return data?.recent_orders ?? [];
-        return (data?.recent_orders ?? []).filter((order) => [String(order.order_id), order.customer_name, order.country, order.channel, order.status]
-            .some((value) => value.toLowerCase().includes(normalized)));
-    }, [data, query]);
+        const orders = data?.recent_orders ?? [];
+        const matchingOrders = normalized
+            ? orders.filter((order) => [String(order.order_id), order.customer_name, order.country, order.channel, order.status]
+                .some((value) => value.toLowerCase().includes(normalized)))
+            : orders;
+        return [...matchingOrders].sort((left, right) => {
+            if (orderSort === "highest-sales")
+                return right.sales - left.sales || right.order_id - left.order_id;
+            if (orderSort === "lowest-sales")
+                return left.sales - right.sales || right.order_id - left.order_id;
+            if (orderSort === "customer")
+                return left.customer_name.localeCompare(right.customer_name)
+                    || right.order_date.localeCompare(left.order_date);
+            return right.order_date.localeCompare(left.order_date) || right.order_id - left.order_id;
+        });
+    }, [data, query, orderSort]);
     const chartData = useMemo(() => (data?.revenue_trend ?? []).map((item) => ({
         ...item,
         // Seven-day charts need only the day number; the full range remains above the chart.
@@ -193,34 +217,17 @@ function App() {
     return (<div className="app-shell">
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
         <div className="brand-row">
+          <button className="icon-button mobile-menu" type="button" aria-label={mobileNavOpen ? "Close menu" : "Open menu"} aria-expanded={mobileNavOpen} aria-controls="dashboard-navigation" onClick={() => setMobileNavOpen((open) => !open)}>{mobileNavOpen ? <X size={20}/> : <Menu size={20}/>}</button>
           <div className="brand-mark"><span>O</span><i /></div>
           <div className="brand-wordmark"><strong>opsvista</strong><span>OPERATIONS INTELLIGENCE</span></div>
-          <button className="icon-button mobile-close" aria-label="Close menu" onClick={() => setMobileNavOpen(false)}><X size={18}/></button>
         </div>
 
-        <div className="workspace-switcher">
-          <span className="workspace-icon"><Database size={16}/></span>
-          <span className="workspace-copy"><b>Garden retailer</b><small>Source data workspace</small></span>
-        </div>
-
-        <div className="nav-caption">DASHBOARD</div>
-        <nav className="primary-nav" aria-label="Dashboard sections">
+        <nav id="dashboard-navigation" className="primary-nav" aria-label="Dashboard sections">
           {navItems.map(({ label, href, icon: Icon }) => (<a key={label} href={href} aria-current={activeSection === label ? "location" : undefined} onClick={() => { setMobileNavOpen(false); setActiveSection(label); }} className={`nav-link ${activeSection === label ? "active" : ""}`}>
               <Icon size={17} strokeWidth={activeSection === label ? 2.1 : 1.8}/><span>{label}</span>
             </a>))}
         </nav>
 
-        <div className="sidebar-bottom">
-          <div className="data-status-card">
-            <div className="status-head"><span className="status-dot"/> SOURCE DATA <span className="status-live">LOCAL</span></div>
-            <div className="status-message">{filters ? <><Check size={14}/> {tableCount} source tables</> : "Connecting to source tables"}</div>
-            <div className="status-meta">{filters ? `${count.format(filters.table_counts.orders ?? 0)} orders loaded` : "Local data connection"}</div>
-          </div>
-          <div className="profile-row">
-            <div className="avatar avatar-user">OV</div>
-            <div className="profile-copy"><b>OpsVista</b><small>Analytics workspace</small></div>
-          </div>
-        </div>
       </aside>
 
       {mobileNavOpen && <button className="mobile-scrim" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"/>}
@@ -234,8 +241,7 @@ function App() {
           </nav>
           <div className="topbar-actions">
             <button className="icon-button theme-toggle" type="button" aria-pressed={theme === "dark"} aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={18}/> : <Moon size={18}/>}</button>
-            <label className="search-box"><Search size={15}/><input placeholder="Search recent orders…" aria-label="Search recent orders" value={query} onChange={(event) => setQuery(event.target.value)}/></label>
-            <button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}><Menu size={20}/></button>
+            <label className="search-box"><Search size={17} aria-hidden="true"/><input type="search" placeholder="Search orders" aria-label="Search visible orders by ID, customer, country, channel, or status" value={query} onChange={(event) => setQuery(event.target.value)}/></label>
           </div>
         </header>
 
@@ -264,6 +270,7 @@ function App() {
             <div className="sync-indicator"><span className="status-dot"/> {loading ? "Refreshing" : data ? `Through ${formatDate(data.range.end)}` : "No data"}</div>
           </section>
 
+          {filterError && <div className="error-banner"><CircleHelp size={18}/><div><b>Filter options are unavailable</b><span>{filterError}</span></div><button onClick={() => setRefreshKey((key) => key + 1)}>Try again</button></div>}
           {error && <div className="error-banner"><CircleHelp size={18}/><div><b>Dashboard data is unavailable</b><span>{error}</span></div><button onClick={() => setRefreshKey((key) => key + 1)}>Try again</button></div>}
 
           <section className="metrics-grid" aria-label="Key performance indicators">
@@ -326,14 +333,14 @@ function App() {
               <div className="trend-chart">
                 {data && <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={chartData} margin={{ top: 10, right: 4, left: 4, bottom: 0 }}>
-                    <defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#27aa88" stopOpacity={0.21}/><stop offset="95%" stopColor="#27aa88" stopOpacity={0.01}/></linearGradient></defs>
-                    <CartesianGrid vertical={false} stroke={theme === "dark" ? "#2c3b40" : "#edf0f2"} strokeDasharray="3 5"/>
-                    <XAxis dataKey="shortDate" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#a6b5b7" : "#778287", fontSize: 12 }} interval="preserveStartEnd" minTickGap={20} dy={10}/>
-                    <YAxis yAxisId="sales" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#a6b5b7" : "#778287", fontSize: 12 }} tickFormatter={(value) => compactAmount.format(value)} width={62}/>
+                    <defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#5b91ff" stopOpacity={0.24}/><stop offset="95%" stopColor="#5b91ff" stopOpacity={0.01}/></linearGradient></defs>
+                    <CartesianGrid vertical={false} stroke={theme === "dark" ? "#343a47" : "#e8edf4"} strokeDasharray="3 5"/>
+                    <XAxis dataKey="shortDate" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#b8c2d3" : "#758198", fontSize: 12 }} interval="preserveStartEnd" minTickGap={20} dy={10}/>
+                    <YAxis yAxisId="sales" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#b8c2d3" : "#758198", fontSize: 12 }} tickFormatter={(value) => compactAmount.format(value)} width={62}/>
                     <YAxis yAxisId="orders" orientation="right" hide domain={[0, "dataMax + 7"]}/>
                     <Tooltip content={<TrendTooltip />}/>
-                    <Area yAxisId="sales" type="monotone" dataKey="sales" stroke="#27aa88" strokeWidth={2.5} fill="url(#revenueFill)" activeDot={{ r: 4, fill: "#fff", stroke: "#27aa88", strokeWidth: 2 }} isAnimationActive={false}/>
-                    <Line yAxisId="orders" type="monotone" dataKey="orders" stroke="#83a9d7" strokeWidth={1.8} strokeDasharray="4 5" dot={false} activeDot={{ r: 3, fill: "#83a9d7" }} isAnimationActive={false}/>
+                    <Area yAxisId="sales" type="monotone" dataKey="sales" stroke="#6fa0ff" strokeWidth={2.5} fill="url(#revenueFill)" activeDot={{ r: 4, fill: "#fff", stroke: "#6fa0ff", strokeWidth: 2 }} isAnimationActive={false}/>
+                    <Line yAxisId="orders" type="monotone" dataKey="orders" stroke="#b7c9ed" strokeWidth={1.8} strokeDasharray="4 5" dot={false} activeDot={{ r: 3, fill: "#b7c9ed" }} isAnimationActive={false}/>
                   </ComposedChart>
                 </ResponsiveContainer>}
                 {!data && <div className="chart-empty"><span className="empty-orbit"><Activity size={22}/></span><b>Waiting for the source tables</b><span>Start the API to load the selected period.</span></div>}
@@ -364,7 +371,7 @@ function App() {
             <article className="panel category-panel" id="products">
               <div className="panel-heading"><div><div className="panel-kicker">PRODUCT MIX</div><h2>Category performance</h2><p>Net sales contribution by category · source units</p></div></div>
               <div className="category-chart">
-                {data && data.categories.length > 0 ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data.categories} layout="vertical" margin={{ top: 4, right: 15, bottom: 0, left: 0 }} barSize={11}><CartesianGrid horizontal={false} stroke={theme === "dark" ? "#2c3b40" : "#edf0f2"}/><XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#a6b5b7" : "#778287", fontSize: 12 }} tickFormatter={(value) => compactAmount.format(value)}/><YAxis type="category" dataKey="label" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#c7d4d2" : "#606b71", fontSize: 12 }} width={100}/><Tooltip content={<CategoryTooltip />}/><Bar dataKey="sales" fill="#42b595" radius={[0, 5, 5, 0]} isAnimationActive={false}/></BarChart></ResponsiveContainer> : <div className="empty-small">No category sales for this filter</div>}
+                {data && data.categories.length > 0 ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data.categories} layout="vertical" margin={{ top: 4, right: 15, bottom: 0, left: 0 }} barSize={11}><CartesianGrid horizontal={false} stroke={theme === "dark" ? "#343a47" : "#e8edf4"}/><XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#b8c2d3" : "#758198", fontSize: 12 }} tickFormatter={(value) => compactAmount.format(value)}/><YAxis type="category" dataKey="label" tickLine={false} axisLine={false} tick={{ fill: theme === "dark" ? "#d0d6e1" : "#596579", fontSize: 12 }} width={100}/><Tooltip content={<CategoryTooltip />}/><Bar dataKey="sales" fill="#4f85f5" radius={[0, 5, 5, 0]} isAnimationActive={false}/></BarChart></ResponsiveContainer> : <div className="empty-small">No category sales for this filter</div>}
               </div>
               <div className="category-footer"><span><i className="legend-dot revenue-dot"/> Leading category</span><b>{data?.categories[0]?.label ?? "—"}</b></div>
             </article>
@@ -416,7 +423,7 @@ function App() {
           </section>
 
           <section className="panel orders-panel" id="orders">
-            <div className="panel-heading orders-heading"><div><div className="panel-kicker">ORDER ACTIVITY</div><h2>Recent orders</h2><p>Latest orders in this period · select a row for details</p></div><div className="order-table-actions"><label className="rows-control"><span>Show</span><span className="rows-select-wrap"><select aria-label="Number of recent orders to show" value={orderLimit} onChange={(event) => setOrderLimit(Number(event.target.value))}>{[10, 25, 50, 100].map((value) => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={14} aria-hidden="true"/></span><span>rows</span></label><button className="button button-secondary table-action" onClick={exportOrders} disabled={!data}><Download size={14}/> Export rows</button></div></div>
+            <div className="panel-heading orders-heading"><div><div className="panel-kicker">ORDER ACTIVITY</div><h2>Recent orders</h2><p>Latest orders in this period · select a row for details</p></div><div className="order-table-actions"><label className="rows-control"><span>Sort</span><span className="rows-select-wrap sort-select-wrap"><select aria-label="Sort recent orders" value={orderSort} onChange={(event) => setOrderSort(event.target.value)}><option value="newest">Newest first</option><option value="highest-sales">Highest sales</option><option value="lowest-sales">Lowest sales</option><option value="customer">Customer name</option></select><ChevronDown size={14} aria-hidden="true"/></span></label><label className="rows-control"><span>Show</span><span className="rows-select-wrap"><select aria-label="Number of recent orders to show" value={orderLimit} onChange={(event) => setOrderLimit(Number(event.target.value))}>{[10, 25, 50, 100].map((value) => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={14} aria-hidden="true"/></span><span>rows</span></label><button className="button button-secondary table-action" onClick={exportOrders} disabled={!data}><Download size={14}/> Export rows</button></div></div>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>ORDER</th><th>CUSTOMER</th><th>COUNTRY</th><th>CHANNEL</th><th>STATUS</th><th>NET SALES</th><th>PAYMENT</th><th>SHIP TIME</th></tr></thead>

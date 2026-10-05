@@ -4,6 +4,12 @@ OpsVista is a dashboard for exploring the supplied garden retailer data. It show
 
 The dashboard uses **JavaScript and React** in the browser, **Python and FastAPI** for the API, and **PostgreSQL** to store the data.
 
+## Dashboard preview
+
+![OpsVista dashboard showing its key metrics, sales trend, order health, and business insights](docs/screenshots/opsvista-dashboard.png)
+
+The screenshot shows the dark theme, which is selected by default. Use the sun or moon button in the top bar to switch themes; your choice is remembered in that browser.
+
 ## What you need
 
 - Windows, macOS, or Linux
@@ -71,6 +77,8 @@ npm run dev -- --host 127.0.0.1
 
 Open **http://127.0.0.1:5173** in your browser. The API documentation is at **http://127.0.0.1:8000/docs**. Press `Ctrl+C` in each terminal to stop its server.
 
+The frontend proxies `/api` to `http://localhost:8000` by default. Set `OPSVISTA_API_URL` before starting Vite if your API runs at a different address.
+
 ## Using the dashboard
 
 - Choose a 7, 30, or 90 day reporting period.
@@ -80,7 +88,7 @@ Open **http://127.0.0.1:5173** in your browser. The API documentation is at **ht
 - Select a question-mark icon on a data panel to open its explanation. Hover a top-product row to see its sales details.
 - Customer, payment, return, product, and channel cards update with the selected date range and filters.
 - Select a recent order row to open its payment, delivery, return, and sales details.
-- Choose to show 10, 25, 50, or 100 recent orders, search the loaded rows, and export visible rows as CSV.
+- Choose to show 10, 25, 50, or 100 recent orders, search the loaded rows, sort by date or sales, and export visible rows as CSV.
 - Select the moon or sun button to switch between light and dark themes. Your choice is remembered in that browser.
 - On a phone or tablet, use the menu button to open the section links. The order table can scroll sideways when needed.
 
